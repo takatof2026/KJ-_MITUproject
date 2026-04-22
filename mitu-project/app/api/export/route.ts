@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 
 const FONT = 'BIZ UDゴシック'
-const DATA_ROWS_PER_PAGE = 25
-const SUBTOTAL_ROWS = 6
+const DATA_ROWS_PER_PAGE = 54
+const SUBTOTAL_ROWS = 7
+const THIN = { style: 'thin' as const }
+const BORDER = { top: THIN, bottom: THIN, left: THIN, right: THIN }
 
 export async function POST(req: NextRequest) {
   const { date, building, title, staff, work_type, sections } = await req.json()
@@ -21,6 +23,10 @@ export async function POST(req: NextRequest) {
 
   const f = (size: number) => ({ name: FONT, size })
 
+  const setBorder = (row: ExcelJS.Row) => {
+    for (let i = 2; i <= 9; i++) { row.getCell(i).border = BORDER }
+  }
+
   const addPageBreak = () => {
     const pRow = ws.getRow(r)
     pRow.getCell(9).value = 'P.  ' + pageNum
@@ -30,6 +36,7 @@ export async function POST(req: NextRequest) {
     ws.getRow(r).height = 15.95
     r++
     pageNum++
+    dataRowsInPage = 0
   }
 
   const addPageHeader = () => {
@@ -44,12 +51,19 @@ export async function POST(req: NextRequest) {
     h.getCell(9).value = '備　考'
     h.height = 26.1
     ;[3,5,6,7,8,9].forEach(i => { h.getCell(i).font = f(10) })
+    setBorder(h)
     r++
-    dataRowsInPage = 0
   }
 
   const ensureSpace = (needed: number) => {
     if (dataRowsInPage + needed > DATA_ROWS_PER_PAGE) {
+      while (dataRowsInPage < DATA_ROWS_PER_PAGE) {
+        const er = ws.getRow(r)
+        er.height = 36
+        setBorder(er)
+        r++
+        dataRowsInPage++
+      }
       addPageBreak()
       addPageHeader()
     }
@@ -72,16 +86,24 @@ export async function POST(req: NextRequest) {
   h2.getCell(9).value = '備　考'
   h2.height = 26.1
   ;[3,5,6,7,8,9].forEach(i => { h2.getCell(i).font = f(10) })
+  setBorder(h2)
   r++
   const tRow = ws.getRow(r)
   tRow.getCell(2).value = 'Ⅱ'
   tRow.getCell(3).value = '建築工事'
   tRow.height = 36
+  ;[2,3].forEach(i => { tRow.getCell(i).font = f(10) })
+  setBorder(tRow)
   r++
-  ws.getRow(r).getCell(3).value = '（内訳）'
-  ws.getRow(r).height = 36
+  const naiRow = ws.getRow(r)
+  naiRow.getCell(3).value = '（内訳）'
+  naiRow.getCell(3).font = f(10)
+  naiRow.height = 36
+  setBorder(naiRow)
   r++
-  ws.getRow(r).height = 36
+  const emRow = ws.getRow(r)
+  emRow.height = 36
+  setBorder(emRow)
   r++
   sections.forEach((section: any, idx: number) => {
     const sr = ws.getRow(r)
@@ -92,6 +114,7 @@ export async function POST(req: NextRequest) {
     sr.getCell(8).value = Math.round(getSectionTotal(section))
     sr.height = 36
     ;[2,3,5,6,8].forEach(i => { sr.getCell(i).font = f(10) })
+    setBorder(sr)
     r++
   })
   const grandTotal = sections.reduce((s: number, sec: any) => s + getSectionTotal(sec), 0)
@@ -100,8 +123,14 @@ export async function POST(req: NextRequest) {
   gtRow.getCell(8).value = Math.round(grandTotal)
   gtRow.height = 36
   ;[4,8].forEach(i => { gtRow.getCell(i).font = f(10) })
+  setBorder(gtRow)
   r++
-  while (r < 28) { ws.getRow(r).height = 36; r++ }
+  while (r <= 57) {
+    const fr = ws.getRow(r)
+    fr.height = 36
+    setBorder(fr)
+    r++
+  }
   addPageBreak()
   addPageHeader()
 
@@ -113,6 +142,7 @@ export async function POST(req: NextRequest) {
     sh.getCell(3).value = section.name
     sh.height = 36
     ;[2,3].forEach(i => { sh.getCell(i).font = f(10) })
+    setBorder(sh)
     r++
     dataRowsInPage++
 
@@ -140,6 +170,7 @@ export async function POST(req: NextRequest) {
       dr.getCell(9).alignment = { wrapText: true, vertical: 'top' }
       dr.getCell(9).font = f(9)
       dr.height = 36
+      setBorder(dr)
       r++
       dataRowsInPage++
     })
@@ -151,6 +182,7 @@ export async function POST(req: NextRequest) {
     stRow.getCell(8).value = Math.round(subtotal)
     stRow.height = 36
     ;[4,8].forEach(i => { stRow.getCell(i).font = f(10) })
+    setBorder(stRow)
     r++
     dataRowsInPage++
     const keihi = Math.round(subtotal * 0.07)
@@ -167,6 +199,7 @@ export async function POST(req: NextRequest) {
       er.getCell(8).value = val
       er.height = 36
       ;[3,5,6,8].forEach(i => { er.getCell(i).font = f(10) })
+      setBorder(er)
       r++
       dataRowsInPage++
     })
@@ -176,12 +209,25 @@ export async function POST(req: NextRequest) {
     secTotalRow.getCell(8).value = Math.round(sectionTotal)
     secTotalRow.height = 36
     ;[4,8].forEach(i => { secTotalRow.getCell(i).font = f(10) })
+    setBorder(secTotalRow)
     r++
     dataRowsInPage++
-    ws.getRow(r).height = 36; r++; dataRowsInPage++
-    ws.getRow(r).height = 36; r++; dataRowsInPage++
+    for (let i = 0; i < 2; i++) {
+      const br = ws.getRow(r)
+      br.height = 36
+      setBorder(br)
+      r++
+      dataRowsInPage++
+    }
   })
 
+  while (dataRowsInPage < DATA_ROWS_PER_PAGE) {
+    const fr = ws.getRow(r)
+    fr.height = 36
+    setBorder(fr)
+    r++
+    dataRowsInPage++
+  }
   addPageBreak()
 
   const arrayBuffer = await wb.xlsx.writeBuffer()
