@@ -3,7 +3,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
-const APP_VERSION = 'V0.1.1'
+const APP_VERSION = 'V0.1.2'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
 
@@ -42,6 +42,7 @@ function EstimatePage() {
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
+  const [showBackDialog, setShowBackDialog] = useState(false)
 
   const [popup, setPopup] = useState<{
     sectionId: string; rowId: string; workSection: string
@@ -50,7 +51,6 @@ function EstimatePage() {
   const [popupLoading, setPopupLoading] = useState(false)
   const [popupSearch, setPopupSearch] = useState('')
 
-  // モード判定
   const mode = !draft_id ? 'new' : !date ? 'copy' : 'draft'
   const modeLabel = mode === 'new' ? '新規作成' : mode === 'copy' ? 'コピー編集中' : '下書き編集中'
   const modeBg = mode === 'new' ? 'bg-gray-500' : mode === 'copy' ? 'bg-orange-500' : 'bg-yellow-500'
@@ -86,6 +86,50 @@ function EstimatePage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
+  // 戻るダイアログ: 変更（上書き）
+  const handleBackUpdate = () => {
+    setShowBackDialog(false)
+    const p = new URLSearchParams({
+      date, building, title, staff, work_type,
+      ...(draft_id ? { draft_id } : {})
+    })
+    router.push(`/?${p.toString()}&mode=update`)
+  }
+
+  // 戻るダイアログ: 明細コピー編集
+  const handleBackCopy = async () => {
+    setShowBackDialog(false)
+    const sectionsToSave = sections.map(s => ({
+      ...s, rows: s.rows.map(r => ({ ...r, candidates: [], showCandidates: false }))
+    }))
+    const file_key = `copy_${Date.now()}`
+    const { data } = await supabase.from('drafts').insert({
+      file_key,
+      date: '',
+      building,
+      title: '',
+      staff,
+      work_type,
+      sections: sectionsToSave,
+      updated_at: new Date().toISOString()
+    }).select('id').single()
+    if (data) {
+      const p = new URLSearchParams({
+        building, staff, work_type,
+        draft_id: String(data.id),
+        mode: 'copy'
+      })
+      router.push(`/?${p.toString()}`)
+    }
+  }
+
+  // 戻るダイアログ: 新規（明細空）
+  const handleBackNew = () => {
+    setShowBackDialog(false)
+    const p = new URLSearchParams({ date, building, title, staff, work_type })
+    router.push(`/?${p.toString()}`)
+  }
+
   const openPopup = async (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupSearch('')
@@ -112,21 +156,13 @@ function EstimatePage() {
           const p = parseFloat(unit_price) || 0
           return {
             ...r,
-            name1: item.name1 || '',
-            name2: item.name2 || '',
-            name3: item.name3 || '',
-            spec1: item.spec1 || '',
-            spec2: item.spec2 || '',
-            spec3: item.spec3 || '',
-            unit: item.unit || '',
-            unit_price,
+            name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
+            spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
+            unit: item.unit || '', unit_price,
             amount: Math.round(q * p * 10) / 10,
-            note1: item.note1 || '',
-            note2: item.note2 || '',
-            note3: item.note3 || '',
+            note1: item.note1 || '', note2: item.note2 || '', note3: item.note3 || '',
             source_estimate_item_id: item.id,
-            candidates: [],
-            showCandidates: false
+            candidates: [], showCandidates: false
           }
         })
       }
@@ -137,10 +173,7 @@ function EstimatePage() {
   const filteredPopupItems = popupItems.filter(item => {
     if (!popupSearch) return true
     const kw = popupSearch.toLowerCase()
-    return (
-      (item.name1 || '').toLowerCase().includes(kw) ||
-      (item.spec1 || '').toLowerCase().includes(kw)
-    )
+    return (item.name1 || '').toLowerCase().includes(kw) || (item.spec1 || '').toLowerCase().includes(kw)
   })
 
   const uniquePopupItems = filteredPopupItems.filter((item, idx, arr) =>
@@ -211,8 +244,7 @@ function EstimatePage() {
       if (s.id !== sectionId) return s
       return { ...s, rows: s.rows.map(r =>
         r.id === rowId ? {
-          ...r,
-          name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
+          ...r, name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
           spec1: item.spec1||'', unit: item.unit||'',
           candidates: [], showCandidates: false
         } : r
@@ -242,7 +274,7 @@ function EstimatePage() {
     <main className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center gap-4 mb-4">
-          <button onClick={() => router.push('/')} className="text-gray-500 hover:text-gray-700">← 戻る</button>
+          <button onClick={() => setShowBackDialog(true)} className="text-gray-500 hover:text-gray-700">← 戻る</button>
           <h1 className="text-xl font-bold text-gray-800">明細入力</h1>
           <span className={`text-xs text-white px-2 py-0.5 rounded ${modeBg}`}>{modeLabel}</span>
           <span className="ml-auto text-xs text-gray-400">{APP_VERSION}</span>
@@ -400,6 +432,38 @@ function EstimatePage() {
         </div>
       </div>
 
+      {/* 戻るダイアログ */}
+      {showBackDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">どのように戻りますか？</h3>
+            <p className="text-sm text-gray-500 mb-6">現在の明細：{sections.reduce((s,sec)=>s+sec.rows.length,0)}行</p>
+            <div className="space-y-3">
+              <button onClick={handleBackUpdate}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 text-left px-4">
+                <div className="font-medium">変更</div>
+                <div className="text-xs opacity-80">同じ件名で案件情報を修正する</div>
+              </button>
+              <button onClick={handleBackCopy}
+                className="w-full bg-orange-500 text-white py-3 rounded-lg font-medium hover:bg-orange-600 text-left px-4">
+                <div className="font-medium">明細コピー編集</div>
+                <div className="text-xs opacity-80">この明細を別件名でコピーして使う</div>
+              </button>
+              <button onClick={handleBackNew}
+                className="w-full bg-gray-500 text-white py-3 rounded-lg font-medium hover:bg-gray-600 text-left px-4">
+                <div className="font-medium">新規</div>
+                <div className="text-xs opacity-80">明細を空にして新しく作る</div>
+              </button>
+              <button onClick={() => setShowBackDialog(false)}
+                className="w-full border border-gray-300 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50">
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 品目選択ポップアップ */}
       {popup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
@@ -408,13 +472,8 @@ function EstimatePage() {
               <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
             </div>
             <div className="p-3 border-b">
-              <input
-                className="w-full border rounded px-3 py-2 text-sm"
-                placeholder="名称・仕様で絞り込み"
-                value={popupSearch}
-                onChange={e => setPopupSearch(e.target.value)}
-                autoFocus
-              />
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="名称・仕様で絞り込み"
+                value={popupSearch} onChange={e => setPopupSearch(e.target.value)} autoFocus />
             </div>
             <div className="overflow-y-auto flex-1">
               {popupLoading ? (
