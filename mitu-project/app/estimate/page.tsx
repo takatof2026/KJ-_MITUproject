@@ -1,13 +1,18 @@
+// ============================================================
+// ファイル: mitu-project/app/estimate/page.tsx
+// バージョン: V0.1.3
+// 更新: 2026/04/24
+// 変更: 戻るボタン目立つ化・名称入力→estimate_itemsポップアップ
+// ============================================================
 'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
-const APP_VERSION = 'V0.1.2'
+const APP_VERSION = 'V0.1.3'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
 
-type Item = { id: number; name1: string; name2: string; name3: string; spec1: string; unit: string }
 type PopupItem = {
   id: number
   name1: string; name2: string | null; name3: string | null
@@ -21,7 +26,7 @@ type Row = {
   spec1: string; spec2: string; spec3: string
   quantity: string; unit: string; unit_price: string; amount: number
   note1: string; note2: string; note3: string
-  candidates: Item[]; showCandidates: boolean
+  showCandidates: boolean
   source_estimate_item_id: number | null
 }
 type Section = { id: string; name: string; rows: Row[] }
@@ -45,7 +50,7 @@ function EstimatePage() {
   const [showBackDialog, setShowBackDialog] = useState(false)
 
   const [popup, setPopup] = useState<{
-    sectionId: string; rowId: string; workSection: string
+    sectionId: string; rowId: string; workSection: string; keyword?: string
   } | null>(null)
   const [popupItems, setPopupItems] = useState<PopupItem[]>([])
   const [popupLoading, setPopupLoading] = useState(false)
@@ -74,7 +79,7 @@ function EstimatePage() {
     setSaving(true)
     const file_key = `${date}_${building}_${title}_${staff}_${work_type}`
     const sectionsToSave = sections.map(s => ({
-      ...s, rows: s.rows.map(r => ({ ...r, candidates: [], showCandidates: false }))
+      ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false }))
     }))
     await supabase.from('drafts').upsert({
       file_key, date, building, title, staff, work_type,
@@ -86,53 +91,37 @@ function EstimatePage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
-  // 戻るダイアログ: 変更（上書き）
   const handleBackUpdate = () => {
     setShowBackDialog(false)
-    const p = new URLSearchParams({
-      date, building, title, staff, work_type,
-      ...(draft_id ? { draft_id } : {})
-    })
+    const p = new URLSearchParams({ date, building, title, staff, work_type, ...(draft_id ? { draft_id } : {}) })
     router.push(`/?${p.toString()}&mode=update`)
   }
 
-  // 戻るダイアログ: 明細コピー編集
   const handleBackCopy = async () => {
     setShowBackDialog(false)
-    const sectionsToSave = sections.map(s => ({
-      ...s, rows: s.rows.map(r => ({ ...r, candidates: [], showCandidates: false }))
-    }))
+    const sectionsToSave = sections.map(s => ({ ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false })) }))
     const file_key = `copy_${Date.now()}`
     const { data } = await supabase.from('drafts').insert({
-      file_key,
-      date: '',
-      building,
-      title: '',
-      staff,
-      work_type,
+      file_key, date: '', building, title: '', staff, work_type,
       sections: sectionsToSave,
       updated_at: new Date().toISOString()
     }).select('id').single()
     if (data) {
-      const p = new URLSearchParams({
-        building, staff, work_type,
-        draft_id: String(data.id),
-        mode: 'copy'
-      })
+      const p = new URLSearchParams({ building, staff, work_type, draft_id: String(data.id), mode: 'copy' })
       router.push(`/?${p.toString()}`)
     }
   }
 
-  // 戻るダイアログ: 新規（明細空）
   const handleBackNew = () => {
     setShowBackDialog(false)
     const p = new URLSearchParams({ date, building, title, staff, work_type })
     router.push(`/?${p.toString()}`)
   }
 
-  const openPopup = async (sectionId: string, rowId: string, sectionName: string) => {
-    setPopup({ sectionId, rowId, workSection: sectionName })
-    setPopupSearch('')
+  // ポップアップを開く（📋ボタン or 名称入力）
+  const openPopup = async (sectionId: string, rowId: string, sectionName: string, keyword?: string) => {
+    setPopup({ sectionId, rowId, workSection: sectionName, keyword })
+    setPopupSearch(keyword || '')
     setPopupLoading(true)
     const { data } = await supabase
       .from('estimate_items')
@@ -142,6 +131,14 @@ function EstimatePage() {
       .order('name1')
     setPopupItems(data || [])
     setPopupLoading(false)
+  }
+
+  // 名称入力時（2文字以上でポップアップ）
+  const handleNameInput = (sectionId: string, rowId: string, sectionName: string, value: string) => {
+    updateRow(sectionId, rowId, 'name1', value)
+    if (value.length >= 2) {
+      openPopup(sectionId, rowId, sectionName, value)
+    }
   }
 
   const selectPopupItem = (item: PopupItem) => {
@@ -162,7 +159,7 @@ function EstimatePage() {
             amount: Math.round(q * p * 10) / 10,
             note1: item.note1 || '', note2: item.note2 || '', note3: item.note3 || '',
             source_estimate_item_id: item.id,
-            candidates: [], showCandidates: false
+            showCandidates: false
           }
         })
       }
@@ -186,7 +183,7 @@ function EstimatePage() {
     spec1:'', spec2:'', spec3:'',
     quantity:'', unit:'', unit_price:'', amount:0,
     note1:'', note2:'', note3:'',
-    candidates:[], showCandidates:false,
+    showCandidates:false,
     source_estimate_item_id: null
   })
 
@@ -227,31 +224,6 @@ function EstimatePage() {
     }))
   }
 
-  const searchItems = async (sectionId: string, rowId: string, keyword: string) => {
-    if (keyword.length < 2) return
-    const { data } = await supabase.from('items').select('id,name1,name2,name3,spec1,unit')
-      .or(`name1.ilike.%${keyword}%,name2.ilike.%${keyword}%`).limit(5)
-    setSections(prev => prev.map(s => {
-      if (s.id !== sectionId) return s
-      return { ...s, rows: s.rows.map(r =>
-        r.id === rowId ? { ...r, candidates: data || [], showCandidates: true } : r
-      )}
-    }))
-  }
-
-  const selectCandidate = (sectionId: string, rowId: string, item: Item) => {
-    setSections(prev => prev.map(s => {
-      if (s.id !== sectionId) return s
-      return { ...s, rows: s.rows.map(r =>
-        r.id === rowId ? {
-          ...r, name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
-          spec1: item.spec1||'', unit: item.unit||'',
-          candidates: [], showCandidates: false
-        } : r
-      )}
-    }))
-  }
-
   const subtotal = (s: Section) => s.rows.reduce((sum, r) => sum + r.amount, 0)
   const grandTotal = sections.reduce((sum, s) => sum + subtotal(s), 0)
 
@@ -273,13 +245,20 @@ function EstimatePage() {
   return (
     <main className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center gap-4 mb-4">
-          <button onClick={() => setShowBackDialog(true)} className="text-gray-500 hover:text-gray-700">← 戻る</button>
+
+        {/* ヘッダー */}
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => setShowBackDialog(true)}
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium text-sm">
+            ← 戻る
+          </button>
           <h1 className="text-xl font-bold text-gray-800">明細入力</h1>
           <span className={`text-xs text-white px-2 py-0.5 rounded ${modeBg}`}>{modeLabel}</span>
           <span className="ml-auto text-xs text-gray-400">{APP_VERSION}</span>
         </div>
 
+        {/* 案件情報 */}
         <div className="bg-white rounded p-3 mb-4 text-sm text-gray-600 flex gap-4 flex-wrap">
           <span>{date || '📅 日付を入力してください'}</span>
           <span>{building}</span>
@@ -288,6 +267,7 @@ function EstimatePage() {
           <span>{work_type}</span>
         </div>
 
+        {/* 工事区分ごとの明細 */}
         {sections.map(section => (
           <div key={section.id} className="mb-6">
             <div className="flex items-center justify-between bg-blue-800 text-white px-4 py-2 rounded-t">
@@ -318,21 +298,9 @@ function EstimatePage() {
                           className="w-7 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm"
                           title="品目選択">📋</button>
                       </td>
-                      <td className="p-1 relative">
+                      <td className="p-1">
                         <input className="w-full border rounded px-2 py-1 mb-1" value={row.name1} placeholder="名称1段目"
-                          onChange={e => { updateRow(section.id, row.id, 'name1', e.target.value); searchItems(section.id, row.id, e.target.value) }} />
-                        {row.showCandidates && row.candidates.length > 0 && (
-                          <div className="absolute z-10 bg-white border shadow-lg rounded mt-1 w-64 left-0">
-                            {row.candidates.map(c => (
-                              <div key={c.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b"
-                                onClick={() => selectCandidate(section.id, row.id, c)}>
-                                <div className="font-medium">{c.name1}</div>
-                                {c.name2 && <div className="text-gray-500">{c.name2}</div>}
-                                {c.spec1 && <div className="text-blue-400">{c.spec1}</div>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                          onChange={e => handleNameInput(section.id, row.id, section.name, e.target.value)} />
                         <input className="w-full border rounded px-2 py-1 mb-1" value={row.name2} placeholder="名称2段目"
                           onChange={e => updateRow(section.id, row.id, 'name2', e.target.value)} />
                         <input className="w-full border rounded px-2 py-1" value={row.name3} placeholder="名称3段目"
@@ -390,6 +358,7 @@ function EstimatePage() {
           </div>
         ))}
 
+        {/* 工事区分追加 */}
         <div className="mb-6">
           {!showSectionInput ? (
             <button onClick={() => setShowSectionInput(true)}
@@ -416,6 +385,7 @@ function EstimatePage() {
           )}
         </div>
 
+        {/* フッター */}
         <div className="bg-white rounded p-4 flex justify-between items-center sticky bottom-4 shadow-lg">
           <div className="text-xl font-bold">合計: {grandTotal.toLocaleString()} 円</div>
           <div className="flex gap-3 items-center">
