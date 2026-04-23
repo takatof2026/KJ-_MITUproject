@@ -3,16 +3,26 @@ import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
+const APP_VERSION = 'V0.1.1'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
 
 type Item = { id: number; name1: string; name2: string; name3: string; spec1: string; unit: string }
+type PopupItem = {
+  id: number
+  name1: string; name2: string | null; name3: string | null
+  spec1: string | null; spec2: string | null; spec3: string | null
+  unit: string | null; unit_price: number | null
+  note1: string | null; note2: string | null; note3: string | null
+  estimate_id: number
+}
 type Row = {
   id: string; name1: string; name2: string; name3: string
   spec1: string; spec2: string; spec3: string
   quantity: string; unit: string; unit_price: string; amount: number
   note1: string; note2: string; note3: string
   candidates: Item[]; showCandidates: boolean
+  source_estimate_item_id: number | null
 }
 type Section = { id: string; name: string; rows: Row[] }
 
@@ -32,6 +42,18 @@ function EstimatePage() {
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
+
+  const [popup, setPopup] = useState<{
+    sectionId: string; rowId: string; workSection: string
+  } | null>(null)
+  const [popupItems, setPopupItems] = useState<PopupItem[]>([])
+  const [popupLoading, setPopupLoading] = useState(false)
+  const [popupSearch, setPopupSearch] = useState('')
+
+  // モード判定
+  const mode = !draft_id ? 'new' : !date ? 'copy' : 'draft'
+  const modeLabel = mode === 'new' ? '新規作成' : mode === 'copy' ? 'コピー編集中' : '下書き編集中'
+  const modeBg = mode === 'new' ? 'bg-gray-500' : mode === 'copy' ? 'bg-orange-500' : 'bg-yellow-500'
 
   useEffect(() => {
     loadUnits()
@@ -64,13 +86,75 @@ function EstimatePage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
+  const openPopup = async (sectionId: string, rowId: string, sectionName: string) => {
+    setPopup({ sectionId, rowId, workSection: sectionName })
+    setPopupSearch('')
+    setPopupLoading(true)
+    const { data } = await supabase
+      .from('estimate_items')
+      .select('id,name1,name2,name3,spec1,spec2,spec3,unit,unit_price,note1,note2,note3,estimate_id')
+      .eq('work_section', sectionName)
+      .not('name1', 'is', null)
+      .order('name1')
+    setPopupItems(data || [])
+    setPopupLoading(false)
+  }
+
+  const selectPopupItem = (item: PopupItem) => {
+    if (!popup) return
+    setSections(prev => prev.map(s => {
+      if (s.id !== popup.sectionId) return s
+      return {
+        ...s, rows: s.rows.map(r => {
+          if (r.id !== popup.rowId) return r
+          const unit_price = item.unit_price?.toString() || ''
+          const q = parseFloat(r.quantity) || 0
+          const p = parseFloat(unit_price) || 0
+          return {
+            ...r,
+            name1: item.name1 || '',
+            name2: item.name2 || '',
+            name3: item.name3 || '',
+            spec1: item.spec1 || '',
+            spec2: item.spec2 || '',
+            spec3: item.spec3 || '',
+            unit: item.unit || '',
+            unit_price,
+            amount: Math.round(q * p * 10) / 10,
+            note1: item.note1 || '',
+            note2: item.note2 || '',
+            note3: item.note3 || '',
+            source_estimate_item_id: item.id,
+            candidates: [],
+            showCandidates: false
+          }
+        })
+      }
+    }))
+    setPopup(null)
+  }
+
+  const filteredPopupItems = popupItems.filter(item => {
+    if (!popupSearch) return true
+    const kw = popupSearch.toLowerCase()
+    return (
+      (item.name1 || '').toLowerCase().includes(kw) ||
+      (item.spec1 || '').toLowerCase().includes(kw)
+    )
+  })
+
+  const uniquePopupItems = filteredPopupItems.filter((item, idx, arr) =>
+    arr.findIndex(x => x.name1 === item.name1 && x.spec1 === item.spec1) === idx
+  )
+
   const newRow = (): Row => ({
     id: Math.random().toString(36).slice(2),
     name1:'', name2:'', name3:'',
     spec1:'', spec2:'', spec3:'',
     quantity:'', unit:'', unit_price:'', amount:0,
     note1:'', note2:'', note3:'',
-    candidates:[], showCandidates:false
+    candidates:[], showCandidates:false,
+    source_estimate_item_id: null
   })
 
   const addSection = (name: string) => {
@@ -160,11 +244,16 @@ function EstimatePage() {
         <div className="flex items-center gap-4 mb-4">
           <button onClick={() => router.push('/')} className="text-gray-500 hover:text-gray-700">← 戻る</button>
           <h1 className="text-xl font-bold text-gray-800">明細入力</h1>
+          <span className={`text-xs text-white px-2 py-0.5 rounded ${modeBg}`}>{modeLabel}</span>
+          <span className="ml-auto text-xs text-gray-400">{APP_VERSION}</span>
         </div>
+
         <div className="bg-white rounded p-3 mb-4 text-sm text-gray-600 flex gap-4 flex-wrap">
-          <span>{date}</span><span>{building}</span>
-          <span className="font-medium">{title}</span>
-          <span>{staff}</span><span>{work_type}</span>
+          <span>{date || '📅 日付を入力してください'}</span>
+          <span>{building}</span>
+          <span className="font-medium">{title || '📝 件名を入力してください'}</span>
+          <span>{staff}</span>
+          <span>{work_type}</span>
         </div>
 
         {sections.map(section => (
@@ -177,6 +266,7 @@ function EstimatePage() {
               <table className="w-full text-xs">
                 <thead className="bg-gray-100">
                   <tr>
+                    <th className="p-2 text-left w-8"></th>
                     <th className="p-2 text-left w-44">名称</th>
                     <th className="p-2 text-left w-36">仕様</th>
                     <th className="p-2 text-right w-16">数量</th>
@@ -190,6 +280,12 @@ function EstimatePage() {
                 <tbody>
                   {section.rows.map(row => (
                     <tr key={row.id} className="border-t align-top">
+                      <td className="p-1 pt-2">
+                        <button
+                          onClick={() => openPopup(section.id, row.id, section.name)}
+                          className="w-7 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm"
+                          title="品目選択">📋</button>
+                      </td>
                       <td className="p-1 relative">
                         <input className="w-full border rounded px-2 py-1 mb-1" value={row.name1} placeholder="名称1段目"
                           onChange={e => { updateRow(section.id, row.id, 'name1', e.target.value); searchItems(section.id, row.id, e.target.value) }} />
@@ -234,6 +330,9 @@ function EstimatePage() {
                       <td className="p-1">
                         <input className="w-full border rounded px-2 py-1 text-right" value={row.unit_price} type="number"
                           onChange={e => updateRow(section.id, row.id, 'unit_price', e.target.value)} />
+                        {row.source_estimate_item_id && (
+                          <div className="text-gray-300 text-xs text-right mt-1">#{row.source_estimate_item_id}</div>
+                        )}
                       </td>
                       <td className="p-1 text-right pr-2 pt-2">{row.amount.toLocaleString()}</td>
                       <td className="p-1">
@@ -300,6 +399,69 @@ function EstimatePage() {
           </div>
         </div>
       </div>
+
+      {popup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-blue-800 rounded-t-lg">
+              <h3 className="text-white font-bold">品目選択 - {popup.workSection}</h3>
+              <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
+            </div>
+            <div className="p-3 border-b">
+              <input
+                className="w-full border rounded px-3 py-2 text-sm"
+                placeholder="名称・仕様で絞り込み"
+                value={popupSearch}
+                onChange={e => setPopupSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {popupLoading ? (
+                <div className="p-8 text-center text-gray-400">読み込み中...</div>
+              ) : uniquePopupItems.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">
+                  {popupSearch ? '該当する品目がありません' : 'このカテゴリの品目データがありません'}
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="p-2 text-left">名称</th>
+                      <th className="p-2 text-left">仕様</th>
+                      <th className="p-2 text-left w-12">単位</th>
+                      <th className="p-2 text-right w-20">単価</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uniquePopupItems.map(item => (
+                      <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
+                        onClick={() => selectPopupItem(item)}>
+                        <td className="p-2">
+                          <div>{item.name1}</div>
+                          {item.name2 && <div className="text-gray-400">{item.name2}</div>}
+                          {item.name3 && <div className="text-gray-400">{item.name3}</div>}
+                        </td>
+                        <td className="p-2 text-gray-500">
+                          <div>{item.spec1}</div>
+                          {item.spec2 && <div>{item.spec2}</div>}
+                        </td>
+                        <td className="p-2">{item.unit}</td>
+                        <td className="p-2 text-right font-medium">
+                          {item.unit_price ? item.unit_price.toLocaleString() : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="px-4 py-2 border-t text-xs text-gray-400 text-right">
+              {uniquePopupItems.length}件表示
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
