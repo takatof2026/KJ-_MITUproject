@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 type Draft = {
@@ -14,17 +14,26 @@ type Draft = {
   updated_at: string
 }
 
-export default function Home() {
+function HomePage() {
   const router = useRouter()
+  const params = useSearchParams()
+  const mode = params.get('mode') || 'new'
+  const draft_id = params.get('draft_id') || ''
+  const isCopy = mode === 'copy'
+
   const [form, setForm] = useState({
-    date: '', building: '', title: '', staff: '', work_type: 'C工事',
+    date: '',
+    building: params.get('building') || '',
+    title: '',
+    staff: params.get('staff') || '',
+    work_type: params.get('work_type') || 'C工事',
   })
   const [drafts, setDrafts] = useState<Draft[]>([])
   const buildings = ['新宿FT', '新宿ESS']
   const work_types = ['A工事', 'B工事', 'C工事']
 
   useEffect(() => {
-    loadDrafts()
+    if (!isCopy) loadDrafts()
   }, [])
 
   const loadDrafts = async () => {
@@ -36,17 +45,20 @@ export default function Home() {
     setDrafts(data || [])
   }
 
-  const handleNew = () => {
+  const handleSubmit = () => {
     if (!form.date || !form.building || !form.title || !form.staff) {
       alert('全項目入力してください')
       return
     }
-    const params = new URLSearchParams(form)
-    router.push(`/estimate?${params.toString()}`)
+    const p = new URLSearchParams({
+      ...form,
+      ...(draft_id ? { draft_id } : {})
+    })
+    router.push(`/estimate?${p.toString()}`)
   }
 
   const handleLoad = (draft: Draft) => {
-    const params = new URLSearchParams({
+    const p = new URLSearchParams({
       date: draft.date,
       building: draft.building,
       title: draft.title,
@@ -54,7 +66,7 @@ export default function Home() {
       work_type: draft.work_type,
       draft_id: String(draft.id)
     })
-    router.push(`/estimate?${params.toString()}`)
+    router.push(`/estimate?${p.toString()}`)
   }
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
@@ -66,12 +78,21 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-8">
-      <h1 className="text-2xl font-bold mb-8 text-gray-800">見積作成システム</h1>
+      <h1 className="text-2xl font-bold mb-2 text-gray-800">見積作成システム</h1>
+      {isCopy && (
+        <div className="mb-6 bg-orange-50 border border-orange-200 rounded px-4 py-2 text-sm text-orange-700 font-medium">
+          📋 明細コピー編集 — 日付と件名を入力してください
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="bg-white rounded-lg shadow p-6 space-y-4">
-          <h2 className="text-lg font-bold text-gray-700">新規作成</h2>
+          <h2 className="text-lg font-bold text-gray-700">
+            {isCopy ? '案件情報入力' : '新規作成'}
+          </h2>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">日付</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              日付 {isCopy && <span className="text-orange-500">※必須入力</span>}
+            </label>
             <input type="date" className="w-full border rounded px-3 py-2"
               value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
           </div>
@@ -84,7 +105,9 @@ export default function Home() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">件名</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              件名 {isCopy && <span className="text-orange-500">※必須入力</span>}
+            </label>
             <input type="text" className="w-full border rounded px-3 py-2"
               value={form.title} onChange={e => setForm({...form, title: e.target.value})}
               placeholder="17階1701区外原状回復工事" />
@@ -102,37 +125,49 @@ export default function Home() {
               {work_types.map(w => <option key={w} value={w}>{w}</option>)}
             </select>
           </div>
-          <button onClick={handleNew}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700">
-            新規作成 →
+          <button onClick={handleSubmit}
+            className={`w-full text-white py-3 rounded-lg font-medium ${isCopy ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+            {isCopy ? '明細コピー編集へ →' : '新規作成 →'}
           </button>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-bold text-gray-700 mb-4">保存済み一覧</h2>
-          {drafts.length === 0 ? (
-            <p className="text-gray-400 text-sm">保存済みデータはありません</p>
-          ) : (
-            <div className="space-y-2">
-              {drafts.map(d => (
-                <div key={d.id}
-                  onClick={() => handleLoad(d)}
-                  className="border rounded p-3 cursor-pointer hover:bg-blue-50 flex justify-between items-start">
-                  <div>
-                    <div className="font-medium text-sm">{d.building} {d.title}</div>
-                    <div className="text-xs text-gray-500">{d.date} / {d.staff} / {d.work_type}</div>
-                    <div className="text-xs text-gray-400">
-                      更新: {new Date(d.updated_at).toLocaleDateString('ja-JP')}
-                    </div>
-                  </div>
-                  <button onClick={e => handleDelete(d.id, e)}
-                    className="text-red-400 hover:text-red-600 text-sm ml-2">削除</button>
-                </div>
-              ))}
-            </div>
+          {isCopy && (
+            <button onClick={() => router.push('/history')}
+              className="w-full border border-gray-300 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50">
+              ← 過去見積一覧に戻る
+            </button>
           )}
         </div>
+
+        {!isCopy && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-bold text-gray-700 mb-4">保存済み一覧</h2>
+            {drafts.length === 0 ? (
+              <p className="text-gray-400 text-sm">保存済みデータはありません</p>
+            ) : (
+              <div className="space-y-2">
+                {drafts.map(d => (
+                  <div key={d.id}
+                    onClick={() => handleLoad(d)}
+                    className="border rounded p-3 cursor-pointer hover:bg-blue-50 flex justify-between items-start">
+                    <div>
+                      <div className="font-medium text-sm">{d.building} {d.title}</div>
+                      <div className="text-xs text-gray-500">{d.date} / {d.staff} / {d.work_type}</div>
+                      <div className="text-xs text-gray-400">
+                        更新: {new Date(d.updated_at).toLocaleDateString('ja-JP')}
+                      </div>
+                    </div>
+                    <button onClick={e => handleDelete(d.id, e)}
+                      className="text-red-400 hover:text-red-600 text-sm ml-2">削除</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </main>
   )
+}
+
+export default function Page() {
+  return <Suspense><HomePage /></Suspense>
 }
