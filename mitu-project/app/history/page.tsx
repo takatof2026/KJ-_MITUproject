@@ -32,10 +32,10 @@ type EstimateItem = {
 }
 
 type Filters = {
+  staff: string
   building: string
   workType: string
-  staff: string
-  title: string
+  year: string
 }
 
 export default function HistoryPage() {
@@ -43,8 +43,10 @@ export default function HistoryPage() {
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null)
   const [items, setItems] = useState<EstimateItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [showTitleList, setShowTitleList] = useState(false)
+  const [is770, setIs770] = useState(false)
   const [filters, setFilters] = useState<Filters>({
-    building: '', workType: '', staff: '', title: ''
+    staff: '', building: '', workType: '', year: ''
   })
 
   useEffect(() => {
@@ -74,37 +76,31 @@ export default function HistoryPage() {
     setLoading(false)
   }
 
-  const handleFilterChange = (newFilter: Partial<Filters>) => {
-    const updated = { ...filters, ...newFilter }
-    setFilters(updated)
-    const matched = estimates.filter(e => {
-      if (updated.building && e.building !== updated.building) return false
-      if (updated.workType && e.work_type !== updated.workType) return false
-      if (updated.staff && e.staff !== updated.staff) return false
-      if (updated.title && e.title !== updated.title) return false
-      return true
-    })
-    if (matched.length > 0) loadItems(matched[0])
+  const handleTitleSelect = (estimate: Estimate) => {
+    loadItems(estimate)
+    setShowTitleList(false)
   }
 
   const resetFilters = () => {
-    setFilters({ building: '', workType: '', staff: '', title: '' })
+    setFilters({ staff: '', building: '', workType: '', year: '' })
+    setShowTitleList(false)
     // 明細はそのまま維持
   }
 
-  // 他のフィルター条件で絞り込んだ選択肢を返す
-  const getOptions = (exclude: keyof Filters) => estimates.filter(e => {
-    if (exclude !== 'building' && filters.building && e.building !== filters.building) return false
-    if (exclude !== 'workType' && filters.workType && e.work_type !== filters.workType) return false
-    if (exclude !== 'staff' && filters.staff && e.staff !== filters.staff) return false
-    if (exclude !== 'title' && filters.title && e.title !== filters.title) return false
+  // 他のフィルター条件で絞り込んだ件名一覧
+  const filteredEstimates = estimates.filter(e => {
+    if (filters.staff && e.staff !== filters.staff) return false
+    if (filters.building && e.building !== filters.building) return false
+    if (filters.workType && e.work_type !== filters.workType) return false
+    if (filters.year && !e.date.startsWith(filters.year)) return false
     return true
   })
 
-  const buildings = [...new Set(getOptions('building').map(e => e.building))]
-  const workTypes = [...new Set(getOptions('workType').map(e => e.work_type))]
-  const staffList = [...new Set(getOptions('staff').map(e => e.staff))]
-  const titles = [...new Set(getOptions('title').map(e => e.title))]
+  // ドロップダウン選択肢（全件から）
+  const staffList = [...new Set(estimates.map(e => e.staff))]
+  const buildings = [...new Set(estimates.map(e => e.building))]
+  const workTypes = [...new Set(estimates.map(e => e.work_type))]
+  const years = [...new Set(estimates.map(e => e.date.slice(0, 4)))].sort().reverse()
 
   // 経費行を除いた通常明細
   const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
@@ -128,25 +124,15 @@ export default function HistoryPage() {
     const exportSections = sectionNames.map(name => {
       const { sectionItems } = getSectionData(name)
       return {
-        id: name,
-        name,
+        id: name, name,
         rows: sectionItems.map(item => ({
           id: String(item.id),
-          name1: item.name1 || '',
-          name2: item.name2 || '',
-          name3: item.name3 || '',
-          spec1: item.spec1 || '',
-          spec2: item.spec2 || '',
-          spec3: item.spec3 || '',
-          quantity: String(item.quantity),
-          unit: item.unit || '',
-          unit_price: String(item.unit_price),
-          amount: item.amount,
-          note1: item.note1 || '',
-          note2: item.note2 || '',
-          note3: item.note3 || '',
-          candidates: [],
-          showCandidates: false,
+          name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
+          spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
+          quantity: String(item.quantity), unit: item.unit || '',
+          unit_price: String(item.unit_price), amount: item.amount,
+          note1: item.note1 || '', note2: item.note2 || '', note3: item.note3 || '',
+          candidates: [], showCandidates: false,
         }))
       }
     })
@@ -171,155 +157,205 @@ export default function HistoryPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <div className={is770 ? 'max-w-[770px] mx-auto' : 'w-full'}>
+      <main className="min-h-screen bg-gray-50">
 
-      {/* 上部固定フィルターバー */}
-      <div className="sticky top-0 z-10 bg-white border-b shadow-sm px-4 py-2 flex items-center gap-2 flex-wrap">
-        <select
-          className="border rounded px-2 py-1 text-sm"
-          value={filters.building}
-          onChange={e => handleFilterChange({ building: e.target.value })}>
-          <option value="">ビル名▼</option>
-          {buildings.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
-        <select
-          className="border rounded px-2 py-1 text-sm"
-          value={filters.workType}
-          onChange={e => handleFilterChange({ workType: e.target.value })}>
-          <option value="">工事種別▼</option>
-          {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
-        </select>
-        <select
-          className="border rounded px-2 py-1 text-sm"
-          value={filters.staff}
-          onChange={e => handleFilterChange({ staff: e.target.value })}>
-          <option value="">担当者▼</option>
-          {staffList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select
-          className="border rounded px-2 py-1 text-sm"
-          value={filters.title}
-          onChange={e => handleFilterChange({ title: e.target.value })}>
-          <option value="">件名▼</option>
-          {titles.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <button
-          onClick={handleExport}
-          className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 ml-2">
-          Excelダウンロード
-        </button>
-        <button
-          onClick={resetFilters}
-          className="ml-auto border rounded px-4 py-1 text-sm font-bold hover:bg-gray-100">
-          ←
-        </button>
-      </div>
+        {/* 上部固定フィルターバー */}
+        <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-4 py-2 flex items-center gap-2 flex-wrap">
 
-      {/* 案件情報バー */}
-      {selectedEstimate && (
-        <div className="bg-blue-50 border-b px-4 py-2 text-sm text-gray-700 flex gap-4 flex-wrap">
-          <span>{selectedEstimate.date}</span>
-          <span>{selectedEstimate.building}</span>
-          <span className="font-medium">{selectedEstimate.title}</span>
-          <span>{selectedEstimate.staff}</span>
-          <span>{selectedEstimate.work_type}</span>
-        </div>
-      )}
-
-      {/* 明細エリア */}
-      <div className="p-4">
-        {loading ? (
-          <div className="text-center py-8 text-gray-400">読み込み中...</div>
-        ) : (
-          <>
-            {sectionNames.map(sectionName => {
-              const { sectionItems, expenses, subtotal, total } = getSectionData(sectionName)
-              return (
-                <div key={sectionName} className="mb-6">
-
-                  {/* 工事区分ヘッダー（青帯）*/}
-                  <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
-                    <span className="font-bold">{sectionName}</span>
-                    <span className="text-sm">小計 {fmt(subtotal)} 円</span>
+          {/* 件名▼ カスタムドロップダウン */}
+          <div className="relative">
+            <button
+              onClick={() => setShowTitleList(!showTitleList)}
+              className="border rounded px-3 py-1 text-sm bg-blue-50 hover:bg-blue-100 font-medium border-blue-300">
+              件名▼
+            </button>
+            {showTitleList && (
+              <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-30 min-w-[300px] max-h-[60vh] overflow-y-auto">
+                {filteredEstimates.map((e, i) => (
+                  <div key={e.id}>
+                    <div
+                      onClick={() => handleTitleSelect(e)}
+                      className={`px-4 py-2 cursor-pointer hover:bg-blue-50 text-sm ${selectedEstimate?.id === e.id ? 'bg-blue-100 font-medium' : ''}`}>
+                      <div className="font-medium">{e.title}</div>
+                      <div className="text-xs text-gray-500">{e.date} / {e.building} / {e.staff}</div>
+                    </div>
+                    {i < filteredEstimates.length - 1 && <div className="h-2 bg-gray-50" />}
                   </div>
-
-                  {/* 明細テーブル */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs bg-white border border-t-0">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="p-2 text-center" style={{width:'4%'}}>No.</th>
-                          <th className="p-2 text-left" style={{width:'22%'}}>名称</th>
-                          <th className="p-2 text-left" style={{width:'20%'}}>仕様</th>
-                          <th className="p-2 text-right" style={{width:'7%'}}>数量</th>
-                          <th className="p-2 text-center" style={{width:'5%'}}>単位</th>
-                          <th className="p-2 text-right" style={{width:'10%'}}>単価</th>
-                          <th className="p-2 text-right" style={{width:'12%'}}>金額</th>
-                          <th className="p-2 text-left" style={{width:'20%'}}>備考</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sectionItems.map(item => (
-                          <tr key={item.id} className="border-t align-top">
-                            <td className="p-2 text-center">{item.row_order}</td>
-                            <td className="p-2">
-                              {item.name1 && <div>{item.name1}</div>}
-                              {item.name2 && <div className="text-gray-500">{item.name2}</div>}
-                              {item.name3 && <div className="text-gray-500">{item.name3}</div>}
-                            </td>
-                            <td className="p-2">
-                              {item.spec1 && <div>{item.spec1}</div>}
-                              {item.spec2 && <div className="text-gray-500">{item.spec2}</div>}
-                              {item.spec3 && <div className="text-gray-500">{item.spec3}</div>}
-                            </td>
-                            <td className="p-2 text-right">{item.quantity?.toFixed(1)}</td>
-                            <td className="p-2 text-center">{item.unit}</td>
-                            <td className="p-2 text-right">{fmt(item.unit_price)}</td>
-                            <td className="p-2 text-right">{fmt(item.amount)}</td>
-                            <td className="p-2">
-                              {item.note1 && <div>{item.note1}</div>}
-                              {item.note2 && <div className="text-gray-500">{item.note2}</div>}
-                              {item.note3 && <div className="text-gray-500">{item.note3}</div>}
-                            </td>
-                          </tr>
-                        ))}
-
-                        {/* 経費行（グレー背景）*/}
-                        {expenses.map(exp => (
-                          <tr key={exp.id} className="border-t bg-gray-50 align-top">
-                            <td className="p-2"></td>
-                            <td className="p-2 text-gray-600">{exp.name1}</td>
-                            <td className="p-2 text-gray-600">{exp.spec1}</td>
-                            <td className="p-2 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
-                            <td className="p-2 text-center text-gray-600">{exp.unit}</td>
-                            <td className="p-2 text-right text-gray-600">{fmt(exp.unit_price)}</td>
-                            <td className="p-2 text-right text-gray-600">{fmt(exp.amount)}</td>
-                            <td className="p-2 text-gray-600">{exp.note1}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* 工事区分合計（100単位切り捨て）*/}
-                  <div className="bg-gray-200 border border-t-0 px-4 py-2 flex justify-between font-bold text-sm">
-                    <span>{sectionName}　合計</span>
-                    <span>{fmt(total)} 円</span>
-                  </div>
-                </div>
-              )
-            })}
-
-            {/* 建築工事の計 */}
-            {sectionNames.length > 0 && (
-              <div className="bg-blue-900 text-white px-6 py-4 rounded flex justify-between items-center mt-4 mb-8">
-                <span className="text-lg font-bold">建築工事の計</span>
-                <span className="text-xl font-bold">{fmt(grandTotal)} 円</span>
+                ))}
+                {filteredEstimates.length === 0 && (
+                  <div className="px-4 py-3 text-sm text-gray-400">該当なし</div>
+                )}
               </div>
             )}
-          </>
+          </div>
+
+          {/* 担当者▼ */}
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={filters.staff}
+            onChange={e => setFilters({ ...filters, staff: e.target.value })}>
+            <option value="">担当者▼</option>
+            {staffList.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          {/* ビル名▼ */}
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={filters.building}
+            onChange={e => setFilters({ ...filters, building: e.target.value })}>
+            <option value="">ビル名▼</option>
+            {buildings.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+
+          {/* 工事種別▼ */}
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={filters.workType}
+            onChange={e => setFilters({ ...filters, workType: e.target.value })}>
+            <option value="">工事種別▼</option>
+            {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
+          </select>
+
+          {/* 年▼ */}
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={filters.year}
+            onChange={e => setFilters({ ...filters, year: e.target.value })}>
+            <option value="">年▼</option>
+            {years.map(y => <option key={y} value={y}>{y}年</option>)}
+          </select>
+
+          {/* Excelダウンロード */}
+          <button
+            onClick={handleExport}
+            className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+            Excel
+          </button>
+
+          {/* 770トグル */}
+          <button
+            onClick={() => setIs770(!is770)}
+            className={`px-3 py-1 rounded text-sm border font-medium transition-colors ${
+              is770 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-600'
+            }`}>
+            770
+          </button>
+
+          {/* ← リセット */}
+          <button
+            onClick={resetFilters}
+            className="ml-auto bg-orange-500 text-white px-4 py-1 rounded text-sm font-bold hover:bg-orange-600">
+            ←
+          </button>
+        </div>
+
+        {/* 案件情報バー */}
+        {selectedEstimate && (
+          <div className="bg-blue-50 border-b px-4 py-2 text-sm text-gray-700 flex gap-4 flex-wrap">
+            <span>{selectedEstimate.date}</span>
+            <span>{selectedEstimate.building}</span>
+            <span className="font-medium">{selectedEstimate.title}</span>
+            <span>{selectedEstimate.staff}</span>
+            <span>{selectedEstimate.work_type}</span>
+          </div>
         )}
-      </div>
-    </main>
+
+        {/* 明細エリア */}
+        <div className="p-4">
+          {loading ? (
+            <div className="text-center py-8 text-gray-400">読み込み中...</div>
+          ) : (
+            <>
+              {sectionNames.map(sectionName => {
+                const { sectionItems, expenses, subtotal, total } = getSectionData(sectionName)
+                return (
+                  <div key={sectionName} className="mb-6">
+
+                    {/* 工事区分ヘッダー（青帯）*/}
+                    <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
+                      <span className="font-bold">{sectionName}</span>
+                      <span className="text-sm">小計 {fmt(subtotal)} 円</span>
+                    </div>
+
+                    {/* 明細テーブル */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs bg-white border border-t-0">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="p-2 text-center" style={{width:'4%'}}>No.</th>
+                            <th className="p-2 text-left" style={{width:'22%'}}>名称</th>
+                            <th className="p-2 text-left" style={{width:'20%'}}>仕様</th>
+                            <th className="p-2 text-right" style={{width:'7%'}}>数量</th>
+                            <th className="p-2 text-center" style={{width:'5%'}}>単位</th>
+                            <th className="p-2 text-right" style={{width:'10%'}}>単価</th>
+                            <th className="p-2 text-right" style={{width:'12%'}}>金額</th>
+                            <th className="p-2 text-left" style={{width:'20%'}}>備考</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sectionItems.map(item => (
+                            <tr key={item.id} className="border-t align-top">
+                              <td className="p-2 text-center">{item.row_order}</td>
+                              <td className="p-2">
+                                {item.name1 && <div>{item.name1}</div>}
+                                {item.name2 && <div className="text-gray-500">{item.name2}</div>}
+                                {item.name3 && <div className="text-gray-500">{item.name3}</div>}
+                              </td>
+                              <td className="p-2">
+                                {item.spec1 && <div>{item.spec1}</div>}
+                                {item.spec2 && <div className="text-gray-500">{item.spec2}</div>}
+                                {item.spec3 && <div className="text-gray-500">{item.spec3}</div>}
+                              </td>
+                              <td className="p-2 text-right">{item.quantity?.toFixed(1)}</td>
+                              <td className="p-2 text-center">{item.unit}</td>
+                              <td className="p-2 text-right">{fmt(item.unit_price)}</td>
+                              <td className="p-2 text-right">{fmt(item.amount)}</td>
+                              <td className="p-2">
+                                {item.note1 && <div>{item.note1}</div>}
+                                {item.note2 && <div className="text-gray-500">{item.note2}</div>}
+                                {item.note3 && <div className="text-gray-500">{item.note3}</div>}
+                              </td>
+                            </tr>
+                          ))}
+
+                          {/* 経費行（グレー背景）*/}
+                          {expenses.map(exp => (
+                            <tr key={exp.id} className="border-t bg-gray-50 align-top">
+                              <td className="p-2"></td>
+                              <td className="p-2 text-gray-600">{exp.name1}</td>
+                              <td className="p-2 text-gray-600">{exp.spec1}</td>
+                              <td className="p-2 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
+                              <td className="p-2 text-center text-gray-600">{exp.unit}</td>
+                              <td className="p-2 text-right text-gray-600">{fmt(exp.unit_price)}</td>
+                              <td className="p-2 text-right text-gray-600">{fmt(exp.amount)}</td>
+                              <td className="p-2 text-gray-600">{exp.note1}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* 工事区分合計（100単位切り捨て）*/}
+                    <div className="bg-gray-200 border border-t-0 px-4 py-2 flex justify-between font-bold text-sm">
+                      <span>{sectionName}　合計</span>
+                      <span>{fmt(total)} 円</span>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* 建築工事の計 */}
+              {sectionNames.length > 0 && (
+                <div className="bg-blue-900 text-white px-6 py-4 rounded flex justify-between items-center mt-4 mb-8">
+                  <span className="text-lg font-bold">建築工事の計</span>
+                  <span className="text-xl font-bold">{fmt(grandTotal)} 円</span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </main>
+    </div>
   )
 }
