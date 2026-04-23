@@ -1,15 +1,15 @@
 // ============================================================
 // ファイル: mitu-project/app/estimate/page.tsx
-// バージョン: V0.1.3
+// バージョン: V0.1.4
 // 更新: 2026/04/24
-// 変更: 戻るボタン目立つ化・名称入力→estimate_itemsポップアップ
+// 変更: 行追加と同時にポップアップ表示
 // ============================================================
 'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
-const APP_VERSION = 'V0.1.3'
+const APP_VERSION = 'V0.1.4'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
 
@@ -196,10 +196,12 @@ function EstimatePage() {
 
   const deleteSection = (id: string) => setSections(prev => prev.filter(s => s.id !== id))
 
-  const addRow = (sectionId: string) => {
+  const addRow = (sectionId: string, sectionName: string) => {
+    const row = newRow()
     setSections(prev => prev.map(s =>
-      s.id === sectionId ? { ...s, rows: [...s.rows, newRow()] } : s
+      s.id === sectionId ? { ...s, rows: [...s.rows, row] } : s
     ))
+    openPopup(sectionId, row.id, sectionName)
   }
 
   const deleteRow = (sectionId: string, rowId: string) => {
@@ -351,7 +353,7 @@ function EstimatePage() {
                 </tbody>
               </table>
               <div className="p-2 flex justify-between items-center border-t">
-                <button onClick={() => addRow(section.id)} className="text-blue-600 hover:text-blue-800 text-sm">+ 行追加</button>
+                <button onClick={() => addRow(section.id, section.name)} className="text-blue-600 hover:text-blue-800 text-sm">+ 行追加</button>
                 <div className="text-sm font-medium">小計: {subtotal(section).toLocaleString()} 円</div>
               </div>
             </div>
