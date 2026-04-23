@@ -1,15 +1,15 @@
 // ============================================================
 // ファイル: mitu-project/app/estimate/page.tsx
-// バージョン: V0.1.4
+// バージョン: V0.1.5
 // 更新: 2026/04/24
-// 変更: 行追加と同時にポップアップ表示
+// 変更: 行追加ポップアップ・工事区分並び順修正
 // ============================================================
 'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
-const APP_VERSION = 'V0.1.4'
+const APP_VERSION = 'V0.1.5'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
 
