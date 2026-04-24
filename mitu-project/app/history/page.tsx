@@ -1,9 +1,21 @@
+// ============================================================
+// ファイル: mitu-project/app/history/page.tsx
+// バージョン: v0.3.7
+// 更新: 2026/04/24
+// 変更: フィルタ変更時に自動でselectedEstimate切り替え・work_type全角→半角変換
+// コミットメッセージ:
+//   history v0.3.7: フィルタ連動でselectedEstimate自動切替・work_type正規化
+// ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.5'
+const VERSION = 'v0.3.7'
+
+// work_type全角→半角正規化
+const normalizeWorkType = (wt: string) =>
+  wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
 
 type Estimate = {
   id: number
@@ -93,7 +105,20 @@ export default function HistoryPage() {
     setShowTitleList(false)
   }
 
-  const handleCopyToEdit = async () => {
+  // フィルタ変更時に絞り込み結果の先頭をselectedEstimateに自動切り替え
+  const handleFilterChange = (newFilters: Filters) => {
+    setFilters(newFilters)
+    const filtered = estimates.filter(e => {
+      if (newFilters.staff && e.staff !== newFilters.staff) return false
+      if (newFilters.building && e.building !== newFilters.building) return false
+      if (newFilters.workType && e.work_type !== newFilters.workType) return false
+      if (newFilters.year && !e.date.startsWith(newFilters.year)) return false
+      return true
+    })
+    if (filtered.length > 0) loadItems(filtered[0])
+  }
+
+  const handleCopyToEdit = () => {
     if (!selectedEstimate || items.length === 0) return
     setCopying(true)
 
@@ -126,31 +151,28 @@ export default function HistoryPage() {
         }))
     }))
 
-    const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
-    const { data, error } = await supabase.from('drafts').insert({
-      file_key,
-      date: '',
-      building: selectedEstimate.building,
-      title: '',
-      staff: selectedEstimate.staff,
-      work_type: selectedEstimate.work_type,
-      sections,
-      updated_at: new Date().toISOString()
-    }).select('id').single()
-
-    setCopying(false)
-
-    if (error || !data) {
-      alert('コピーに失敗しました')
+    // sessionStorageに一時保持(Supabase drafts insertはトップ画面で行う)
+    try {
+      sessionStorage.setItem('kjm_copy_draft', JSON.stringify({
+        sections,
+        building: selectedEstimate.building,
+        staff: selectedEstimate.staff,
+        work_type: normalizeWorkType(selectedEstimate.work_type),
+        source_estimate_id: selectedEstimate.id,
+      }))
+    } catch (e) {
+      setCopying(false)
+      alert('コピーデータの一時保存に失敗しました')
       return
     }
 
-    // トップページへ遷移（mode=copy、ビル名・担当者・工事種別を引き継ぎ）
+    setCopying(false)
+
+    // トップページへ遷移(mode=copy、draft_idは付けない)
     const params = new URLSearchParams({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
-      work_type: selectedEstimate.work_type,
-      draft_id: String(data.id),
+      work_type: normalizeWorkType(selectedEstimate.work_type),
       mode: 'copy',
     })
     router.push(`/?${params.toString()}`)
@@ -265,22 +287,22 @@ export default function HistoryPage() {
             )}
           </div>
           <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.staff}
-            onChange={e => setFilters({ ...filters, staff: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, staff: e.target.value })}>
             <option value="">担当者▼</option>
             {staffList.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-24" value={filters.building}
-            onChange={e => setFilters({ ...filters, building: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, building: e.target.value })}>
             <option value="">ビル名▼</option>
             {buildings.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.workType}
-            onChange={e => setFilters({ ...filters, workType: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, workType: e.target.value })}>
             <option value="">種別▼</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-16" value={filters.year}
-            onChange={e => setFilters({ ...filters, year: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, year: e.target.value })}>
             <option value="">年▼</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
