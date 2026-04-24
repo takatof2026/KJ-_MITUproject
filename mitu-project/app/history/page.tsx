@@ -1,17 +1,17 @@
 // ============================================================
 // ファイル: mitu-project/app/history/page.tsx
-// バージョン: v0.3.7
+// バージョン: v0.3.8
 // 更新: 2026/04/24
-// 変更: フィルタ変更時に自動でselectedEstimate切り替え・work_type全角→半角変換
+// 変更: loading中はコピー編集ボタンを無効化（明細取得完了前の誤コピー防止）
 // コミットメッセージ:
-//   history v0.3.7: フィルタ連動でselectedEstimate自動切替・work_type正規化
+//   history v0.3.8: loading中コピー編集ボタン無効化
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.7'
+const VERSION = 'v0.3.8'
 
 // work_type全角→半角正規化
 const normalizeWorkType = (wt: string) =>
@@ -310,9 +310,9 @@ export default function HistoryPage() {
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap">
             Excel
           </button>
-          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate}
+          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate || loading}
             className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap">
-            {copying ? '準備中...' : 'コピー編集'}
+            {copying || loading ? '読込中...' : 'コピー編集'}
           </button>
           <button onClick={() => setIs880(!is880)}
             style={{
