@@ -1,21 +1,9 @@
-// ============================================================
-// ファイル: mitu-project/app/history/page.tsx
-// バージョン: v0.3.9
-// 更新: 2026/04/24
-// 変更: コピー編集時にitems/selectedEstimate不一致チェック追加
-// コミットメッセージ:
-//   history v0.3.9: コピー編集のrace condition対策
-// ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.9'
-
-// work_type全角→半角正規化
-const normalizeWorkType = (wt: string) =>
-  wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
+const VERSION = 'v0.3.5'
 
 type Estimate = {
   id: number
@@ -105,26 +93,8 @@ export default function HistoryPage() {
     setShowTitleList(false)
   }
 
-  // フィルタ変更時に絞り込み結果の先頭をselectedEstimateに自動切り替え
-  const handleFilterChange = (newFilters: Filters) => {
-    setFilters(newFilters)
-    const filtered = estimates.filter(e => {
-      if (newFilters.staff && e.staff !== newFilters.staff) return false
-      if (newFilters.building && e.building !== newFilters.building) return false
-      if (newFilters.workType && e.work_type !== newFilters.workType) return false
-      if (newFilters.year && !e.date.startsWith(newFilters.year)) return false
-      return true
-    })
-    if (filtered.length > 0) loadItems(filtered[0])
-  }
-
-  const handleCopyToEdit = () => {
+  const handleCopyToEdit = async () => {
     if (!selectedEstimate || items.length === 0) return
-    // itemsがselectedEstimateのものか確認（race condition対策）
-    if (items[0].estimate_id !== selectedEstimate.id) {
-      alert('データ読込中です。少し待ってから押してください')
-      return
-    }
     setCopying(true)
 
     const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
@@ -156,28 +126,31 @@ export default function HistoryPage() {
         }))
     }))
 
-    // sessionStorageに一時保持(Supabase drafts insertはトップ画面で行う)
-    try {
-      sessionStorage.setItem('kjm_copy_draft', JSON.stringify({
-        sections,
-        building: selectedEstimate.building,
-        staff: selectedEstimate.staff,
-        work_type: normalizeWorkType(selectedEstimate.work_type),
-        source_estimate_id: selectedEstimate.id,
-      }))
-    } catch (e) {
-      setCopying(false)
-      alert('コピーデータの一時保存に失敗しました')
-      return
-    }
+    const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
+    const { data, error } = await supabase.from('drafts').insert({
+      file_key,
+      date: '',
+      building: selectedEstimate.building,
+      title: '',
+      staff: selectedEstimate.staff,
+      work_type: selectedEstimate.work_type,
+      sections,
+      updated_at: new Date().toISOString()
+    }).select('id').single()
 
     setCopying(false)
 
-    // トップページへ遷移(mode=copy、draft_idは付けない)
+    if (error || !data) {
+      alert('コピーに失敗しました')
+      return
+    }
+
+    // トップページへ遷移（mode=copy、ビル名・担当者・工事種別を引き継ぎ）
     const params = new URLSearchParams({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
-      work_type: normalizeWorkType(selectedEstimate.work_type),
+      work_type: selectedEstimate.work_type,
+      draft_id: String(data.id),
       mode: 'copy',
     })
     router.push(`/?${params.toString()}`)
@@ -292,22 +265,22 @@ export default function HistoryPage() {
             )}
           </div>
           <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.staff}
-            onChange={e => handleFilterChange({ ...filters, staff: e.target.value })}>
+            onChange={e => setFilters({ ...filters, staff: e.target.value })}>
             <option value="">担当者▼</option>
             {staffList.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-24" value={filters.building}
-            onChange={e => handleFilterChange({ ...filters, building: e.target.value })}>
+            onChange={e => setFilters({ ...filters, building: e.target.value })}>
             <option value="">ビル名▼</option>
             {buildings.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.workType}
-            onChange={e => handleFilterChange({ ...filters, workType: e.target.value })}>
+            onChange={e => setFilters({ ...filters, workType: e.target.value })}>
             <option value="">種別▼</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-16" value={filters.year}
-            onChange={e => handleFilterChange({ ...filters, year: e.target.value })}>
+            onChange={e => setFilters({ ...filters, year: e.target.value })}>
             <option value="">年▼</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -315,9 +288,9 @@ export default function HistoryPage() {
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap">
             Excel
           </button>
-          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate || loading}
+          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate}
             className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap">
-            {copying || loading ? '読込中...' : 'コピー編集'}
+            {copying ? '準備中...' : 'コピー編集'}
           </button>
           <button onClick={() => setIs880(!is880)}
             style={{
