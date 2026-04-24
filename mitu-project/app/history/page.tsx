@@ -1,17 +1,17 @@
 // ============================================================
 // ファイル: mitu-project/app/history/page.tsx
-// バージョン: v0.3.8
+// バージョン: v0.3.9
 // 更新: 2026/04/24
-// 変更: loading中はコピー編集ボタンを無効化（明細取得完了前の誤コピー防止）
+// 変更: コピー編集時にitems/selectedEstimate不一致チェック追加
 // コミットメッセージ:
-//   history v0.3.8: loading中コピー編集ボタン無効化
+//   history v0.3.9: コピー編集のrace condition対策
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.8'
+const VERSION = 'v0.3.9'
 
 // work_type全角→半角正規化
 const normalizeWorkType = (wt: string) =>
@@ -120,6 +120,11 @@ export default function HistoryPage() {
 
   const handleCopyToEdit = () => {
     if (!selectedEstimate || items.length === 0) return
+    // itemsがselectedEstimateのものか確認（race condition対策）
+    if (items[0].estimate_id !== selectedEstimate.id) {
+      alert('データ読込中です。少し待ってから押してください')
+      return
+    }
     setCopying(true)
 
     const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
